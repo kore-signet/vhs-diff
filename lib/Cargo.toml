@@ -1,0 +1,18 @@
+[package]
+name = "vhs-diff"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+vhs-diff-macros = { path = "../macros" }
+erased-serde = "0.3.19"
+
+[dev-dependencies]
+criterion = "0.3"
+rmp-serde = "1.0.0"
+serde_json = "1.0"
+
+[[bench]]
+name = "games"
+harness = false
