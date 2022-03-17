@@ -32,7 +32,7 @@ where
         let mut cur = self.0;
 
         while let Some(()) = seq.next_element_seed(PatchDeserializer::new(&mut cur))? {
-            if vec.len() > self.1 {
+            if vec.len() >= self.1 {
                 break;
             }
 
@@ -88,7 +88,7 @@ where
                 let mut i = 0;
 
                 while let Some(()) = seq.next_element_seed(PatchDeserializer::new(self.0))? {
-                    if i > self.1 {
+                    if i >= self.1 {
                         break;
                     }
 
