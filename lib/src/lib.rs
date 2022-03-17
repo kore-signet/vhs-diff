@@ -9,6 +9,8 @@ use std::fmt;
 
 pub use vhs_diff_macros::{Diff, Patch};
 
+pub mod patch_seq;
+
 pub trait Patch {
     fn do_patch_command<'de, D>(
         &mut self,
