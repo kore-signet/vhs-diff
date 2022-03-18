@@ -1,45 +1,94 @@
 pub use super::*;
-
 use serde::de::{SeqAccess, Visitor};
+use std::ops::Range;
 
-pub struct PatchesToVec<T>(T, usize);
+pub struct PatchesToVec<'a, T: 'a> {
+    inner: &'a mut Vec<T>,
+    seed: T,
+    range: Range<usize>,
+}
 
-impl<T: Patch + Clone> PatchesToVec<T> {
-    pub fn new(val: T) -> PatchesToVec<T> {
-        PatchesToVec(val, usize::MAX)
+impl<'a, T: Patch + Clone> PatchesToVec<'a, T> {
+    pub fn new(seed: T, inner: &'a mut Vec<T>) -> PatchesToVec<T> {
+        PatchesToVec {
+            inner,
+            seed,
+            range: usize::MIN..usize::MAX,
+        }
     }
 
-    pub fn apply_n(val: T, limit: usize) -> PatchesToVec<T> {
-        PatchesToVec(val, limit)
+    pub fn new_range(seed: T, inner: &'a mut Vec<T>, range: Range<usize>) -> PatchesToVec<T> {
+        PatchesToVec { inner, seed, range }
+    }
+
+    pub fn apply_range<'de, D>(
+        seed: T,
+        inner: &'a mut Vec<T>,
+        range: Range<usize>,
+        deserializer: D,
+    ) -> Result<(), D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        (PatchesToVec { inner, seed, range }).deserialize(deserializer)
     }
 }
 
-impl<'de, T> Visitor<'de> for PatchesToVec<T>
+impl<'de, 'a, T> DeserializeSeed<'de> for PatchesToVec<'a, T>
 where
     T: Patch + Clone,
 {
-    type Value = Vec<T>;
+    type Value = ();
 
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        write!(formatter, "an array of patch arrays")
-    }
-
-    fn visit_seq<A>(self, mut seq: A) -> Result<Vec<T>, A::Error>
+    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
     where
-        A: SeqAccess<'de>,
+        D: Deserializer<'de>,
     {
-        let mut vec = Vec::new();
-        let mut cur = self.0;
-
-        while let Some(()) = seq.next_element_seed(PatchDeserializer::new(&mut cur))? {
-            if vec.len() >= self.1 {
-                break;
-            }
-
-            vec.push(cur.clone());
+        struct PatchesToVecVisitor<'a, T: 'a> {
+            inner: &'a mut Vec<T>,
+            seed: T,
+            range: Range<usize>,
         }
 
-        Ok(vec)
+        impl<'de, 'a, T> Visitor<'de> for PatchesToVecVisitor<'a, T>
+        where
+            T: Patch + Clone,
+        {
+            type Value = ();
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                write!(formatter, "an array of patch arrays")
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<(), A::Error>
+            where
+                A: SeqAccess<'de>,
+            {
+                let mut cur = self.seed;
+
+                let mut i = 0;
+
+                while let Some(()) = seq.next_element_seed(PatchDeserializer::new(&mut cur))? {
+                    if i >= self.range.end {
+                        break;
+                    }
+
+                    if self.range.contains(&i) {
+                        self.inner.push(cur.clone());
+                    }
+
+                    i += 1;
+                }
+
+                Ok(())
+            }
+        }
+
+        deserializer.deserialize_seq(PatchesToVecVisitor {
+            seed: self.seed,
+            range: self.range,
+            inner: self.inner,
+        })
     }
 }
 
