@@ -2,8 +2,19 @@ use vhs_diff::*;
 
 use serde::{Deserialize, Serialize};
 
-
-#[derive(Debug, PartialEq, Clone, Patch, Diff, Serialize, Default, Deserialize, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+#[derive(
+    Debug,
+    PartialEq,
+    Clone,
+    Patch,
+    Diff,
+    Serialize,
+    Default,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
 #[repr(C, align(8))]
 pub struct GameUpdate {
@@ -130,14 +141,14 @@ fn rkyv_decodes_correctly() {
     let patches = unsafe { rkyv::util::archived_root::<ArchivablePatchSeq>(&rkyv_bytes) };
     let mut base: GameUpdate =
         unsafe { rkyv::util::from_bytes_unchecked(patches.base.as_slice()).unwrap() };
-    
+
     let mut i = 0;
 
     for patch in patches.patches.as_slice() {
         unsafe { apply_rkyv_patch(&mut base, patch) };
 
         i += 1;
-        
+
         assert_eq!(base, games[i]);
     }
 }

@@ -3,7 +3,6 @@ use vhs_diff::*;
 
 use serde::{Deserialize, Serialize};
 
-
 #[derive(
     Debug,
     PartialEq,

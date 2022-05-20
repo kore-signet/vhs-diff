@@ -10,6 +10,7 @@ use std::fmt;
 pub use vhs_diff_macros::{Diff, Patch};
 
 pub mod patch_seq;
+pub mod rkyv_seq;
 
 pub trait Patch {
     fn do_patch_command<'de, D>(
@@ -126,6 +127,7 @@ impl Serialize for OwnedPatch {
 }
 
 #[allow(unused_must_use)]
+#[inline(always)]
 pub unsafe fn apply_rkyv_patch<T: Patch>(start: &mut T, patch: &ArchivedArchivablePatch) {
     let mut deser = rkyv::Infallible;
     let bytes = patch.patch_bytes.as_slice();
@@ -149,7 +151,7 @@ pub struct ArchivablePatch {
 #[archive_attr(repr(C, align(8)))]
 pub struct FieldAndPosition {
     pub index: u8,
-    pub position: u32
+    pub position: u32,
 }
 
 #[derive(rkyv::Serialize, rkyv::Archive, rkyv::Deserialize)]
