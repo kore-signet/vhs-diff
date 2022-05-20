@@ -23,18 +23,21 @@ impl<'a, T: Patch + Clone> RkyvPatchesToVec<'a, T> {
     }
 
     #[inline(always)]
-    pub fn apply_range<'de, D>(seed: T, inner: &'a mut Vec<T>, range: Range<usize>, bytes: &[u8]) {
-        (RkyvPatchesToVec { inner, seed, range }).apply(bytes)
+    pub fn apply_range<'de, D>(
+        seed: T,
+        inner: &'a mut Vec<T>,
+        range: Range<usize>,
+        patches: &[ArchivedArchivablePatch],
+    ) {
+        (RkyvPatchesToVec { inner, seed, range }).apply(patches)
     }
 
     #[inline(always)]
-    pub fn apply(self, bytes: &[u8]) {
+    pub fn apply(self, patches: &[ArchivedArchivablePatch]) {
         let mut cur = self.seed;
-        let patches = unsafe { rkyv::util::archived_root::<Vec<ArchivablePatch>>(&bytes) };
-
         let mut i = 0;
 
-        for patch in patches.as_slice() {
+        for patch in patches {
             unsafe { apply_rkyv_patch(&mut cur, patch) };
 
             if i >= self.range.end {
@@ -58,15 +61,14 @@ impl<'a, T: Patch> ApplyRkyvPatches<'a, T> {
         ApplyRkyvPatches(val, limit)
     }
 
-    pub fn apply(val: &'a mut T, limit: usize, bytes: &[u8]) {
-        ApplyRkyvPatches(val, limit).run(bytes)
+    pub fn apply(val: &'a mut T, limit: usize, patches: &[ArchivedArchivablePatch]) {
+        ApplyRkyvPatches(val, limit).run(patches)
     }
 
-    pub fn run(self, bytes: &[u8]) {
+    pub fn run(self, patches: &[ArchivedArchivablePatch]) {
         let mut i = 0;
-        let patches = unsafe { rkyv::util::archived_root::<Vec<ArchivablePatch>>(&bytes) };
 
-        for patch in patches.as_slice() {
+        for patch in patches {
             unsafe { apply_rkyv_patch(self.0, patch) };
             if i >= self.1 {
                 break;
