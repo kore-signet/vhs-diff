@@ -120,7 +120,7 @@ pub fn diff_derive(input: TokenStream) -> TokenStream {
 
             rkyv_table.push(quote! {
                 if self.#ident != rhs.#ident {
-                    positions.push(FieldAndPosition {
+                    positions.push(vhs_diff::FieldAndPosition {
                         index: #len,
                         position: ser.serialize_value(&rhs.#ident).unwrap() as u32
                     });
@@ -142,12 +142,12 @@ pub fn diff_derive(input: TokenStream) -> TokenStream {
 
                 fn diff_rkyv(&self, rhs: Self) -> vhs_diff::ArchivablePatch {
                     use rkyv::ser::{serializers::AllocSerializer, Serializer};
-                    let mut positions: Vec<FieldAndPosition> = Vec::with_capacity(#vec_capacity);
+                    let mut positions: Vec<vhs_diff::FieldAndPosition> = Vec::with_capacity(#vec_capacity);
                     let mut ser = AllocSerializer::<1024>::default();
 
                     #(#rkyv_table)*
 
-                    ArchivablePatch {
+                    vhs_diff::ArchivablePatch {
                         field_positions: positions,
                         patch_bytes: ser.into_serializer().into_inner().to_vec()
                     }
