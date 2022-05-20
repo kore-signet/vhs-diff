@@ -141,7 +141,7 @@ pub unsafe fn apply_rkyv_patch<T: Patch>(start: &mut T, patch: &ArchivedArchivab
     }
 }
 
-#[derive(rkyv::Serialize, rkyv::Archive, rkyv::Deserialize)]
+#[derive(Clone, rkyv::Serialize, rkyv::Archive, rkyv::Deserialize)]
 pub struct ArchivablePatch {
     pub field_positions: Vec<FieldAndPosition>,
     pub patch_bytes: Vec<u8>,
