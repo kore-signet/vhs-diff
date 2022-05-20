@@ -13,6 +13,7 @@ pub fn patch_derive(input: TokenStream) -> TokenStream {
     if let syn::Data::Struct(data) = input.data {
         let mut field_lookup_table: Vec<proc_macro2::TokenStream> = Vec::new();
         let mut seq_access_table: Vec<proc_macro2::TokenStream> = Vec::new();
+        let mut rkyv_table: Vec<proc_macro2::TokenStream> = Vec::new();
 
         for field in data.fields {
             let len = field_lookup_table.len() as u8;
@@ -25,6 +26,13 @@ pub fn patch_derive(input: TokenStream) -> TokenStream {
 
             seq_access_table.push(quote! {
                 #len => { self.#ident = seq.next_element()?.unwrap(); }
+            });
+
+            rkyv_table.push(quote! {
+                #len => {
+                    self.#ident = unsafe { rkyv::util::archived_value::<#ty>(bytes, position) }.deserialize(deser)?;
+                    // *position += std::mem::size_of::<<#ty as rkyv::Archive>::Archived>();
+                }
             });
         }
 
@@ -58,6 +66,25 @@ pub fn patch_derive(input: TokenStream) -> TokenStream {
 
                     Ok(())
                 }
+
+                unsafe fn do_patch_from_byteslice<D>(
+                    &mut self,
+                    field_index: u8,
+                    deser: &mut D,
+                    position: usize,
+                    bytes: &[u8],
+                ) -> Result<(), D::Error>
+                where
+                    D: rkyv::Fallible + ?Sized {
+                        use rkyv::Deserialize;
+
+                        match field_index {
+                            #(#rkyv_table),*
+                            #unreachable_clause
+                        };
+
+                        Ok(())
+                    }
             }
         };
 
@@ -77,6 +104,8 @@ pub fn diff_derive(input: TokenStream) -> TokenStream {
 
     if let syn::Data::Struct(data) = input.data {
         let mut field_lookup_table: Vec<proc_macro2::TokenStream> = Vec::new();
+        let mut rkyv_table: Vec<proc_macro2::TokenStream> = Vec::new();
+
         for field in data.fields {
             let len = field_lookup_table.len() as u8;
             let ident = field.ident.unwrap();
@@ -88,6 +117,15 @@ pub fn diff_derive(input: TokenStream) -> TokenStream {
                     });
                 }
             });
+
+            rkyv_table.push(quote! {
+                if self.#ident != rhs.#ident {
+                    positions.push(FieldAndPosition {
+                        index: #len,
+                        position: ser.serialize_value(&rhs.#ident).unwrap() as u32
+                    });
+                }
+            })
         }
 
         let vec_capacity = field_lookup_table.len();
@@ -100,6 +138,19 @@ pub fn diff_derive(input: TokenStream) -> TokenStream {
                     #(#field_lookup_table)*
 
                     vhs_diff::OwnedPatch(res_vec)
+                }
+
+                fn diff_rkyv(&self, rhs: Self) -> vhs_diff::ArchivablePatch {
+                    use rkyv::ser::{serializers::AllocSerializer, Serializer};
+                    let mut positions: Vec<FieldAndPosition> = Vec::with_capacity(#vec_capacity);
+                    let mut ser = AllocSerializer::<1024>::default();
+
+                    #(#rkyv_table)*
+
+                    ArchivablePatch {
+                        field_positions: positions,
+                        patch_bytes: ser.into_serializer().into_inner().to_vec()
+                    }
                 }
             }
         };

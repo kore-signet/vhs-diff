@@ -8,10 +8,20 @@ serde = { version = "1.0", features = ["derive"] }
 vhs-diff-macros = { path = "../macros" }
 erased-serde = "0.3.19"
 
+[dependencies.rkyv]
+version = "0.7"
+default-features = false
+features = ["std", "size_32", "strict", "archive_le", "alloc"]
+
 [dev-dependencies]
 criterion = "0.3"
 rmp-serde = "1.0.0"
 serde_json = "1.0"
+
+[dev-dependencies.rkyv]
+version = "0.7"
+default-features = false
+features = ["std", "size_32", "strict", "archive_le", "alloc"]
 
 [[bench]]
 name = "games"

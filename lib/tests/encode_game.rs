@@ -1,10 +1,11 @@
 use vhs_diff::*;
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JSONValue;
 
-#[derive(Debug, PartialEq, Clone, Patch, Diff, Serialize, Default, Deserialize)]
+
+#[derive(Debug, PartialEq, Clone, Patch, Diff, Serialize, Default, Deserialize, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
+#[repr(C, align(8))]
 pub struct GameUpdate {
     id: String,
     day: i16,
@@ -79,7 +80,7 @@ pub struct GameUpdate {
     shame: Option<bool>,
     outcomes: Vec<String>,
     secret_baserunner: Option<String>,
-    state: Option<JSONValue>,
+    // state: Option<JSONValue>,
     play_count: i64,
     game_complete: Option<bool>,
     statsheet: Option<String>,
@@ -104,6 +105,39 @@ fn game_decodes_correctly() {
         PatchDeserializer::apply(&mut base, &mut rmp_serde::Deserializer::new(&patch[..])).unwrap();
 
         i += 1;
+        assert_eq!(base, games[i]);
+    }
+}
+
+#[test]
+fn rkyv_decodes_correctly() {
+    let games: Vec<GameUpdate> = serde_json::from_str(include_str!("../game.json")).unwrap();
+    let rkyv_bytes: Vec<u8> = {
+        let mut rkyv_patches = Vec::new();
+
+        for vals in games.windows(2) {
+            rkyv_patches.push(vals[0].diff_rkyv(vals[1].clone()));
+        }
+
+        rkyv::util::to_bytes::<_, 1024>(&ArchivablePatchSeq::from_base_and_patches(
+            &games[0],
+            rkyv_patches,
+        ))
+        .unwrap()
+        .to_vec()
+    };
+
+    let patches = unsafe { rkyv::util::archived_root::<ArchivablePatchSeq>(&rkyv_bytes) };
+    let mut base: GameUpdate =
+        unsafe { rkyv::util::from_bytes_unchecked(patches.base.as_slice()).unwrap() };
+    
+    let mut i = 0;
+
+    for patch in patches.patches.as_slice() {
+        unsafe { apply_rkyv_patch(&mut base, patch) };
+
+        i += 1;
+        
         assert_eq!(base, games[i]);
     }
 }

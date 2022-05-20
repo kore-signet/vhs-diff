@@ -24,6 +24,16 @@ pub trait Patch {
     fn do_patch_from_seq<'de, A>(&mut self, field_index: u8, seq: &mut A) -> Result<(), A::Error>
     where
         A: SeqAccess<'de>;
+
+    unsafe fn do_patch_from_byteslice<D>(
+        &mut self,
+        field_index: u8,
+        deser: &mut D,
+        position: usize,
+        bytes: &[u8],
+    ) -> Result<(), D::Error>
+    where
+        D: rkyv::Fallible + ?Sized;
 }
 
 pub struct PatchDeserializer<'a, T: 'a>(&'a mut T);
@@ -39,6 +49,12 @@ impl<'a, T: Patch> PatchDeserializer<'a, T> {
     {
         PatchDeserializer(val).deserialize(deserializer)
     }
+}
+
+pub trait Diff {
+    fn diff(&self, rhs: Self) -> OwnedPatch;
+
+    fn diff_rkyv(&self, rhs: Self) -> ArchivablePatch;
 }
 
 impl<'de, 'a, T> DeserializeSeed<'de> for PatchDeserializer<'a, T>
@@ -94,10 +110,6 @@ impl Deref for OwnedPatch {
     }
 }
 
-pub trait Diff {
-    fn diff(&self, rhs: Self) -> OwnedPatch;
-}
-
 impl Serialize for OwnedPatch {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -110,5 +122,50 @@ impl Serialize for OwnedPatch {
         }
 
         seq.end()
+    }
+}
+
+#[allow(unused_must_use)]
+pub unsafe fn apply_rkyv_patch<T: Patch>(start: &mut T, patch: &ArchivedArchivablePatch) {
+    let mut deser = rkyv::Infallible;
+    let bytes = patch.patch_bytes.as_slice();
+    for index in patch.field_positions.as_slice().iter() {
+        start.do_patch_from_byteslice(
+            index.index,
+            &mut deser,
+            index.position.value() as usize,
+            bytes,
+        );
+    }
+}
+
+#[derive(rkyv::Serialize, rkyv::Archive, rkyv::Deserialize)]
+pub struct ArchivablePatch {
+    pub field_positions: Vec<FieldAndPosition>,
+    pub patch_bytes: Vec<u8>,
+}
+
+#[derive(Clone, Copy, rkyv::Serialize, rkyv::Archive, rkyv::Deserialize)]
+#[archive_attr(repr(C, align(8)))]
+pub struct FieldAndPosition {
+    pub index: u8,
+    pub position: u32
+}
+
+#[derive(rkyv::Serialize, rkyv::Archive, rkyv::Deserialize)]
+pub struct ArchivablePatchSeq {
+    pub base: Vec<u8>,
+    pub patches: Vec<ArchivablePatch>,
+}
+
+impl ArchivablePatchSeq {
+    pub fn from_base_and_patches<T>(base: &T, patches: Vec<ArchivablePatch>) -> ArchivablePatchSeq
+    where
+        T: rkyv::Serialize<rkyv::ser::serializers::AllocSerializer<1024>>,
+    {
+        ArchivablePatchSeq {
+            base: rkyv::to_bytes::<_, 1024>(base).unwrap().to_vec(),
+            patches,
+        }
     }
 }

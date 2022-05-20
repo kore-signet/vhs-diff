@@ -2,9 +2,21 @@ use criterion::{criterion_group, criterion_main, Criterion};
 use vhs_diff::*;
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JSONValue;
 
-#[derive(Debug, PartialEq, Clone, Patch, Diff, Serialize, Default, Deserialize)]
+
+#[derive(
+    Debug,
+    PartialEq,
+    Clone,
+    Patch,
+    Diff,
+    Serialize,
+    Default,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
 pub struct GameUpdate {
     id: String,
@@ -80,7 +92,7 @@ pub struct GameUpdate {
     shame: Option<bool>,
     outcomes: Vec<String>,
     secret_baserunner: Option<String>,
-    state: Option<JSONValue>,
+    // state: Option<JSONValue>,
     play_count: i64,
     game_complete: Option<bool>,
     statsheet: Option<String>,
@@ -95,6 +107,16 @@ fn full_game_decode(game: &[u8], data: &[&[u8]]) {
     }
 }
 
+fn full_game_rkyv_decode(bytes: &[u8]) {
+    let patches = unsafe { rkyv::util::archived_root::<ArchivablePatchSeq>(bytes) };
+    let mut base: GameUpdate =
+        unsafe { rkyv::util::from_bytes_unchecked(patches.base.as_slice()).unwrap() };
+
+    for patch in patches.patches.as_slice() {
+        unsafe { apply_rkyv_patch(&mut base, patch) };
+    }
+}
+
 fn criterion_benchmark(c: &mut Criterion) {
     let games: Vec<GameUpdate> = serde_json::from_str(include_str!("../game.json")).unwrap();
     let base = rmp_serde::to_vec(&games[0]).unwrap();
@@ -105,11 +127,34 @@ fn criterion_benchmark(c: &mut Criterion) {
         patches.push(rmp_serde::to_vec(&vals[0].diff(vals[1].clone())).unwrap());
     }
 
+    let rkyv_bytes: Vec<u8> = {
+        let mut rkyv_patches = Vec::new();
+
+        for vals in games.windows(2) {
+            rkyv_patches.push(vals[0].diff_rkyv(vals[1].clone()));
+        }
+
+        rkyv::util::to_bytes::<_, 1024>(&ArchivablePatchSeq::from_base_and_patches(
+            &games[0],
+            rkyv_patches,
+        ))
+        .unwrap()
+        .to_vec()
+    };
+
     let patches_borrow: Vec<&[u8]> = patches.iter().map(|v| v.as_ref()).collect();
 
-    c.bench_function("patch a full game", |b| {
+    let mut group = c.benchmark_group("full game decode");
+
+    group.bench_function("patch a full game - serde/msgpack", |b| {
         b.iter(|| full_game_decode(&base, &patches_borrow[..]))
     });
+
+    group.bench_function("patch a full game - rkyv", |b| {
+        b.iter(|| full_game_rkyv_decode(&rkyv_bytes[..]))
+    });
+
+    group.finish();
 }
 
 criterion_group!(benches, criterion_benchmark);
